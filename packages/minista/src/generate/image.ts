@@ -10,6 +10,7 @@ import type {
 } from "../config/image.js"
 import { logger } from "../cli/logger.js"
 import { getSpace } from "../utility/space.js"
+import { createHash }          from "node:crypto"
 
 export type EntryImages = {
   [src: string]: {
@@ -31,6 +32,11 @@ type CreateImage = {
   resizeOptions: ResizeOptions
   format: ResolvedImageFormat
   formatOptions: ResolvedImageOptimize["formatOptions"]
+}
+
+type ImageCache = {
+  contentHash: string
+  optionsHash: string
 }
 
 export async function generateImageCache(fileName: string, data: EntryImages) {
@@ -82,12 +88,45 @@ export async function generateImages({
   if (!createArray.length) {
     return
   }
+
+  const imageCaches = await (async () => {
+    if (!fs.existsSync(path.join(resolvedRoot, "__minista_cache", "cache.json"))) {
+      return []
+    }
+    return JSON.parse((await fs.readFile(path.join(resolvedRoot, "__minista_cache", "cache.json"))).toString()) as unknown as ImageCache[] ?? []
+  })()
+
   await Promise.all(
     createArray.map(async (item) => {
       const fileName = item[0]
       const createImage = item[1]
       const { input, width, height, resizeOptions } = createImage
       const { format, formatOptions } = createImage
+      const imageCache = (() => {
+        const a = createHash('sha256').update(fs.readFileSync(input)).digest('hex')
+        const b = createHash('sha256').update(JSON.stringify(createImage)).digest('hex')
+        return imageCaches.find((item) => item.contentHash === a && item.optionsHash === b)
+      })()
+      const exist = fs.existsSync(path.join(resolvedRoot, "__minista_cache", fileName))
+      if (imageCache && exist) {
+        const space = getSpace({
+          nameLength: fileName.length,
+          maxNameLength,
+          min: 3,
+        })
+        const routePath = path.join(resolvedRoot, config.main.out, fileName)
+        const relativePath = path.relative(process.cwd(), routePath)
+
+        await fs
+          .outputFile(routePath, await fs.readFile(path.join(resolvedRoot, "__minista_cache", fileName)))
+          .then(() => {
+            logger({ label: "SKIPPED", main: relativePath, space })
+          })
+          .catch((err) => {
+            console.error(err)
+          })
+        return
+      }
 
       const image = sharp(input)
       image.resize(width, height, resizeOptions)
@@ -116,6 +155,17 @@ export async function generateImages({
       const relativePath = path.relative(process.cwd(), routePath)
 
       await fs
+        .outputFile(path.join(resolvedRoot, "__minista_cache", fileName), data)
+        .catch((err) => {
+          console.error(err)
+        })
+
+      imageCaches.push({
+        contentHash: createHash('sha256').update(fs.readFileSync(input)).digest('hex'),
+        optionsHash: createHash('sha256').update(JSON.stringify(createImage)).digest('hex')
+      })
+
+      await fs
         .outputFile(routePath, data)
         .then(() => {
           logger({ label: "BUILD", main: relativePath, space, data })
@@ -126,4 +176,8 @@ export async function generateImages({
       return
     })
   )
+
+  await fs.outputJson(path.join(resolvedRoot, "__minista_cache", "cache.json"), imageCaches, { spaces: 2 }).catch((err) => {
+    console.error(err)
+  })
 }

@@ -4,5 +4,6 @@ db.json
 *.log
 node_modules
 dist
+__minista_cache
 styled-system
 styled-system-static

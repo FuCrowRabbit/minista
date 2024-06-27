@@ -8,7 +8,7 @@ export function logger({
   data,
   dataLength,
 }: {
-  label?: "BUILD" | "FETCH" | "ERROR"
+  label?: "BUILD" | "SKIPPED" | "FETCH" | "ERROR"
   main: string
   sub?: string
   space?: string
@@ -19,6 +19,8 @@ export function logger({
     switch (label) {
       case "BUILD":
         return pc.bold(pc.green(label))
+      case "SKIPPED":
+        return pc.bold(pc.yellow(label))
       case "FETCH":
         return pc.bold(pc.blue(label))
       case "ERROR":
