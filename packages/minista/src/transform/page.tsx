@@ -7,6 +7,7 @@ import { Route, Routes } from "react-router-dom"
 import type { PageProps } from "../shared/index.js"
 import type { ResolvedGlobal } from "../server/global.js"
 import type { ResolvedPages } from "../server/page.js"
+import { MarkupEmpty404PageError, NotFoundError } from "../utility/error.js"
 
 type Component = () => React.CElement<
   { [key: string]: any },
@@ -102,6 +103,20 @@ export function transformPage({
       </HelmetProvider>
     </StaticRouter>
   )
+
+  if (markup === "") {
+    if (url !== "/404") {
+      throw new NotFoundError(transformPage({
+                                                           url: "/404",
+                                                           resolvedGlobal,
+                                                           resolvedPages,
+                                                           headTags,
+                                                           startTags,
+                                                           endTags,
+                                                         }))
+    }
+    throw new MarkupEmpty404PageError()
+  }
 
   markup = markup.replace(/(?<=\<[img|source].+?)(srcSet=)/g, "srcset=")
 

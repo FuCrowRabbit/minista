@@ -35,6 +35,7 @@ import { transformEncode } from "../transform/encode.js"
 import { transformSearch } from "../transform/search.js"
 import { generateTempSearch } from "../generate/search.js"
 import { hasElement } from "../utility/element.js"
+import { MarkupEmpty404PageError, NotFoundError } from "../utility/error.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -98,14 +99,25 @@ function pluginDevelop(config: ResolvedConfig): Plugin {
               config,
             })
 
-            let html = transformPage({
-              url,
-              resolvedGlobal,
-              resolvedPages,
-              headTags,
-              startTags,
-              endTags,
-            })
+            res.statusCode = 200
+            let html = (() => {
+              try {
+                return transformPage({
+                                       url,
+                                       resolvedGlobal,
+                                       resolvedPages,
+                                       headTags,
+                                       startTags,
+                                       endTags,
+                                     })
+              } catch (e: unknown) {
+                if (e instanceof NotFoundError) {
+                  res.statusCode = 404
+                  return e.fallback404Html
+                }
+                throw e
+              }
+            })()
 
             let parsedHtml = parseHtml(html, { comment: true }) as NHTMLElement
 
@@ -159,13 +171,18 @@ function pluginDevelop(config: ResolvedConfig): Plugin {
             html = await server.transformIndexHtml(originalUrl, html)
 
             if (charset.match(/^utf[\s-_]*8$/i)) {
-              res.statusCode = 200
+              if (url === "/404") res.statusCode = 404
               res.end(html)
             } else {
-              res.statusCode = 200
+              if (url === "/404") res.statusCode = 404
               res.end(transformEncode(html, charset))
             }
           } catch (e: any) {
+            if (e instanceof MarkupEmpty404PageError) {
+              res.statusCode = 404
+              res.end()
+              return
+            }
             server.ssrFixStacktrace(e)
             next(e)
           }
